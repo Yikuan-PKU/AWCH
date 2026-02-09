@@ -34,7 +34,7 @@ where $\kappa_m^{(p)}$ and $\mathbf{u}_m^{(p)}$ are the eigenvalues and eigenvec
 
 ### Code Decomposition
 
-In the code, the AWD-based covariance is decomposed into three components corresponding to the full expansion (Eq. 10 in the paper):
+In the code, the AWD-based covariance is decomposed into three components corresponding to the full expansion (Eq. 12 in the paper):
 
 | Code Variable | Paper Notation | Formula |
 |---------------|----------------|---------|
@@ -49,11 +49,9 @@ Additional stored quantities:
 | Code Variable | Description |
 |---------------|-------------|
 | `C1_dia_w_dia` | $C_1$ diagonal with only diagonal elements of the weight perturbation covariance $\mathcal{M}_p$ |
-| `C1_h` | Hessian second moment $\mathbb{E}_p[\mathbf{h}_p^2]$ (with $\mathcal{M}_p$ replaced by identity) |
-| `H_1_d` | Diagonal of first Hessian moment: $H_{ii} = \mathbf{v}_i^\top \mathbb{E}_p[\mathbf{h}_p] \mathbf{v}_i$ |
-| `H_2_d` | Diagonal of second Hessian moment: $\mathbf{v}_i^\top \mathbb{E}_p[\mathbf{h}_p^2] \mathbf{v}_i$ |
+| `C1_h` / `H_2_d` | Hessian second moment $\mathbb{E}_p[\mathbf{h}_p^2]$ (with $\mathcal{M}_p$ replaced by identity) |
+| `H_1_d` / `Hessian`|  Global Hessian $\mathbf{H} = \nabla^2 \mathcal{L}$ and its eigen-decomposition (`components`) |
 | `Covar` | Empirical noise covariance via Eq. 2: $\mathbf{C} = \frac{1}{B}[\frac{1}{N}\sum_i \nabla\ell_i \nabla\ell_i^\top - \mathbf{g}\mathbf{g}^\top]$ |
-| `Hessian` | Global Hessian $\mathbf{H} = \nabla^2 \mathcal{L}$ and its eigen-decomposition (`components`) |
 
 All matrices are computed and stored in the **Hessian eigenbasis** $\{\mathbf{v}_i\}$ (referred to as `components` in the code).
 
@@ -71,7 +69,7 @@ All matrices are computed and stored in the **Hessian eigenbasis** $\{\mathbf{v}
 ├── cal_h_g.py               # Entry point: per-sample Hessian h_p & gradient computation only
 │
 ├── Figures.ipynb            # Visualization: C-H commutativity, log-log power-law plots (Fig. 1-4)
-└── effective_power.ipynb    # Effective power / suppression experiment analysis (Fig. 5)
+└── Ablation_exp.ipynb       # suppression experiment analysis (Fig. 5)
 ```
 
 ## Pipeline
@@ -100,7 +98,7 @@ The key experiments in the paper can be reproduced as follows:
 | Table 1 ($\gamma_\text{emp}$ vs $\gamma_\text{AWD}$) | `cal_C_cuda_multi.py` with different `--n_class`, loss functions, and model/dataset combinations |
 | Fig. 1 (C-H commutativity) | `Figures.ipynb` — C-H commutativity section |
 | Fig. 3 (Log-log power law) | `Figures.ipynb` — log-log plot section |
-| Fig. 5 (Suppression experiment) | `effective_power.ipynb` |
+| Fig. 5 (Suppression experiment) | `Albation_exp.ipynb` |
 | Per-sample Hessian $\mathbf{h}_p$ statistics | `cal_h_g.py` |
 
 ## Command-Line Arguments
@@ -130,14 +128,14 @@ All models are trained with vanilla SGD (no extra regularization) to convergence
 
 **MLP (CIFAR-10):** Three hidden layers ($3072 \to 1000 \to 50 \to 50 \to 10$), ReLU activations, no bias. The AWD analysis targets the weight matrix connecting the last two hidden layers ($D = 50 \times 50 = 2500$).
 
-**CNN (MNIST & CIFAR-10):** VGG-style convolutional layers `[32, M, 64, M, 128, 128, M]` (kernel size 3, padding 1; `M` = MaxPool with kernel 2, stride 2), followed by AdaptiveAvgPool → $128 \to 20 \to \mathcal{C}$ fully connected classifier. ReLU activations, no bias, no BatchNorm. The AWD analysis targets the weight matrix from features to the hidden FC layer ($D = 128 \times 20 = 2560$).
+**CNN (MNIST & CIFAR-10):** VGG-style convolutional layers `[32, M, 64, M, 128, 128, M]` (kernel size 3, padding 1; `M` = MaxPool with kernel 2, stride 2), followed by AdaptiveAvgPool → $128 \to 20 \to 10$ fully connected classifier. ReLU activations, no bias, no BatchNorm. The AWD analysis targets the weight matrix from features to the hidden FC layer ($D = 128 \times 20 = 2560$).
 
 All intermediate layer features are cached in `self.feature` for per-sample Hessian computation.
 
 | Model | `layer_index` | Parameter Dimension $D$ |
 |-------|---------------|------------------------|
 | MLP (MNIST) | [1] | 2500 |
-| MLP (CIFAR-10) | [1] | 2500 |
+| MLP (CIFAR-10) | [2] | 2500 |
 | CNN | [8] | 2560 |
 
 ### Training Hyperparameters (Table 1 in paper)
@@ -182,8 +180,8 @@ All experiments use SGD with learning rate $\eta = 0.1$. Results in Table 1 are 
 | `sample_holder` | list | [0..9] | Class IDs for matched sample pair construction |
 | `class_number` | int | 10 | Total number of classes $\mathcal{C}$ |
 | `layer_index` | list | [1] | Target layer index for AWD analysis |
-| `dataset` | str | — | Dataset: `'mnist'` / `'cifar10'` / `'fdata'` |
-| `model` | str | — | Architecture: `'FC'` / `'MLP'` / `'CNN'` |
+| `dataset` | str | — | Dataset: `'mnist'` / `'cifar10'`  |
+| `model` | str | — | Architecture: `'FC'`(for `'mnist'`) / `'MLP'` / `'CNN'` |
 
 ## Supported Datasets
 
