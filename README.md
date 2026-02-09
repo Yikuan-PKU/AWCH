@@ -1,10 +1,10 @@
 # AW-CH: On the Superlinear Relationship between SGD Noise Covariance and Loss Landscape Curvature
 
-Code for the ICML 2026 paper: *"On the Superlinear Relationship between SGD Noise Covariance and Loss Landscape Curvature"*.
+Code for the paper: *"On the Superlinear Relationship between SGD Noise Covariance and Loss Landscape Curvature"*.
 
 ## Overview
 
-This repository provides the implementation for studying the relationship between the SGD noise covariance $\mathbf{C}$ and the loss Hessian $\mathbf{H}$ in neural networks, based on the **Activity–Weight Duality (AWD)** framework ([Feng et al., 2023](https://arxiv.org/abs/2308.05286)).
+This repository provides the implementation for studying the relationship between the SGD noise covariance $\mathbf{C}$ and the loss Hessian $\mathbf{H}$ in neural networks, based on the **Activity–Weight Duality (AWD)** framework.
 
 **Key findings:**
 - The noise covariance is governed by the **second moment** of per-sample Hessians: $\mathbf{C} \propto \mathbb{E}_p[\mathbf{h}_p^2]$, where $\mathbf{H} = \mathbb{E}_p[\mathbf{h}_p]$.
@@ -16,21 +16,21 @@ This repository provides the implementation for studying the relationship betwee
 
 ### Activity–Weight Duality (AWD)
 
-For a fully connected layer with weights $\mathbf{W}$, given an input activity perturbation $\Delta \bm{a}$ from a matched sample pair, the **Minimal AWD** finds the weight perturbation $\Delta \mathbf{W}^*$ that preserves pre-activations with minimal Frobenius norm:
+For a fully connected layer with weights $\mathbf{W}$, given an input activity perturbation $\Delta \mathbf{a}$ from a matched sample pair, the **Minimal AWD** finds the weight perturbation $\Delta \mathbf{W}^*$ that preserves pre-activations with minimal Frobenius norm:
 
-$$\Delta \mathbf{W}^* = \frac{(\mathbf{W} \Delta \bm{a}) \bm{a}^\top}{\|\bm{a}\|^2}$$
+$$\Delta \mathbf{W}^* = \frac{(\mathbf{W} \Delta \mathbf{a}) \mathbf{a}^\top}{\|\mathbf{a}\|^2}$$
 
 ### AWD-Based Noise Covariance Decomposition
 
 Under the AWD gradient approximation, the gradient difference between two mini-batches is dominated by the Hessian-driven term near convergence:
 
-$$\bm{g}_{\mu\nu} \approx \frac{1}{B} \sum_{p \in \mathcal{B}_\nu} \mathbf{h}_p(\bm{w}) \Delta \bm{w}_p^{\mu\nu}$$
+$$\mathbf{g}_{\mu\nu} \approx \frac{1}{B} \sum_{p \in \mathcal{B}_\nu} \mathbf{h}_p(\mathbf{w}) \Delta \mathbf{w}_p^{\mu\nu}$$
 
 This yields the noise covariance as a quadratic form of the per-sample Hessian (Theorem 1 in the paper):
 
-$$C_{ij} \approx \frac{\sigma_w^2}{2B} \mathbb{E}_p \left[ \sum_m (\kappa_m^{(p)})^2 (\bm{u}_m^{(p)} \cdot \bm{v}_i)(\bm{u}_m^{(p)} \cdot \bm{v}_j) \right]$$
+$$C_{ij} \approx \frac{\sigma_w^2}{2B} \mathbb{E}_p \left[ \sum_m (\kappa_m^{(p)})^2 (\mathbf{u}_m^{(p)} \cdot \mathbf{v}_i)(\mathbf{u}_m^{(p)} \cdot \mathbf{v}_j) \right]$$
 
-where $\kappa_m^{(p)}$ and $\bm{u}_m^{(p)}$ are the eigenvalues and eigenvectors of the per-sample Hessian $\mathbf{h}_p$, and $\{\bm{v}_i\}$ is the global Hessian eigenbasis.
+where $\kappa_m^{(p)}$ and $\mathbf{u}_m^{(p)}$ are the eigenvalues and eigenvectors of the per-sample Hessian $\mathbf{h}_p$, and $\{\mathbf{v}_i\}$ is the global Hessian eigenbasis.
 
 ### Code Decomposition
 
@@ -38,9 +38,9 @@ In the code, the AWD-based covariance is decomposed into three components corres
 
 | Code Variable | Paper Notation | Formula |
 |---------------|----------------|---------|
-| `C1` / `C1_dia` | $\mathbf{C}^{hh}$ | $\mathbb{E}[\mathbf{h}_p \Delta\bm{w}_p \Delta\bm{w}_p^\top \mathbf{h}_p^\top]$ — pure Hessian–weight contribution |
+| `C1` / `C1_dia` | $\mathbf{C}^{hh}$ | $\mathbb{E}[\mathbf{h}_p \Delta\mathbf{w}_p \Delta\mathbf{w}_p^\top \mathbf{h}_p^\top]$ — pure Hessian–weight contribution |
 | `C2` / `C2_dia` | $\mathbf{C}^{hg}$ | Cross-interaction between Hessian-weight (Term I) and gradient-activity (Term II) |
-| `C3` / `C3_dia` | $\mathbf{C}^{gg}$ | $\mathbb{E}[(\nabla\Delta\bm{w}_p)^\top \nabla\ell_p \cdot (\nabla\Delta\bm{w}_p)^\top \nabla\ell_p^\top]$ — pure gradient contribution |
+| `C3` / `C3_dia` | $\mathbf{C}^{gg}$ | $\mathbb{E}[(\nabla\Delta\mathbf{w}_p)^\top \nabla\ell_p \cdot (\nabla\Delta\mathbf{w}_p)^\top \nabla\ell_p^\top]$ — pure gradient contribution |
 
 - `*_dia` variants: diagonal terms (same-sample pairs, $p = q$)
 - Without `_dia`: full terms including cross-sample contributions
@@ -50,12 +50,12 @@ Additional stored quantities:
 |---------------|-------------|
 | `C1_dia_w_dia` | $C_1$ diagonal with only diagonal elements of the weight perturbation covariance $\mathcal{M}_p$ |
 | `C1_h` | Hessian second moment $\mathbb{E}_p[\mathbf{h}_p^2]$ (with $\mathcal{M}_p$ replaced by identity) |
-| `H_1_d` | Diagonal of first Hessian moment: $H_{ii} = \bm{v}_i^\top \mathbb{E}_p[\mathbf{h}_p] \bm{v}_i$ |
-| `H_2_d` | Diagonal of second Hessian moment: $\bm{v}_i^\top \mathbb{E}_p[\mathbf{h}_p^2] \bm{v}_i$ |
-| `Covar` | Empirical noise covariance via Eq. 2: $\mathbf{C} = \frac{1}{B}[\frac{1}{N}\sum_i \nabla\ell_i \nabla\ell_i^\top - \bm{g}\bm{g}^\top]$ |
+| `H_1_d` | Diagonal of first Hessian moment: $H_{ii} = \mathbf{v}_i^\top \mathbb{E}_p[\mathbf{h}_p] \mathbf{v}_i$ |
+| `H_2_d` | Diagonal of second Hessian moment: $\mathbf{v}_i^\top \mathbb{E}_p[\mathbf{h}_p^2] \mathbf{v}_i$ |
+| `Covar` | Empirical noise covariance via Eq. 2: $\mathbf{C} = \frac{1}{B}[\frac{1}{N}\sum_i \nabla\ell_i \nabla\ell_i^\top - \mathbf{g}\mathbf{g}^\top]$ |
 | `Hessian` | Global Hessian $\mathbf{H} = \nabla^2 \mathcal{L}$ and its eigen-decomposition (`components`) |
 
-All matrices are computed and stored in the **Hessian eigenbasis** $\{\bm{v}_i\}$ (referred to as `components` in the code).
+All matrices are computed and stored in the **Hessian eigenbasis** $\{\mathbf{v}_i\}$ (referred to as `components` in the code).
 
 ## Project Structure
 
@@ -120,47 +120,70 @@ The key experiments in the paper can be reproduced as follows:
 |----------|------|---------|-------------|
 | `--max_e` | int | 200 | Maximum number of training epochs |
 
-## Configuration Parameters (model_config.py)
+## Experimental Setup
 
-| Parameter | Type | Default | Description | Paper Reference |
-|-----------|------|---------|-------------|-----------------|
-| `alpha` | float | 0.1 | SGD learning rate $\eta$ | Eq. 1 |
-| `lss_fn` | str | `'mse'` | Loss function: `'mse'` (Softmax+MSE) / `'cse'` (CrossEntropy) / `'lmse'` (Linear MSE) | Section 4, Table 1 |
-| `B` | int | 50 | Mini-batch size $B$ | Eq. 1–2 |
-| `train_size` | int | 2000 | Training samples per class | — |
-| `test_size` | int | 1000 | Test set size | — |
-| `rho` | float | 0 | Label noise probability | — |
-| `net_size` | int | 50 | Hidden layer width | — |
-| `s` | int | 1 | Weight initialization scaling factor | — |
-| `d` | float | 0 | Dropout probability | — |
-| `beta` | float | 0 | L2 regularization coefficient | — |
-| `stop_loss` | float | 1e-5 | Early stopping loss threshold | — |
-| `sample_holder` | list | [0..9] | Class IDs for matched sample pair construction | Section 3.1 |
-| `class_number` | int | 10 | Total number of classes $\mathcal{C}$ | Table 1 |
-| `layer_index` | list | [1] | Target layer index for AWD analysis (FC/MLP: [1]; CNN: [8]) | Section 3.2 |
-| `dataset` | str | — | Dataset: `'mnist'` / `'cifar10'` / `'fdata'` | Table 1 |
-| `model` | str | — | Architecture: `'FC'` / `'MLP'` / `'CNN'` | Table 1 |
+All models are trained with vanilla SGD (no extra regularization) to convergence: **100% training accuracy** for CE loss, or **>95%** for MSE loss. A *Softmax* layer is applied before MSE to stabilize Hessian spectra.
 
-### Hyperparameter Sweep Ranges
+### Architecture Details
 
-| Parameter | Values |
-|-----------|--------|
-| `alpha` | 0.005, 0.01, 0.02, 0.05, 0.1 |
-| `train_size` | 400, 800, 1600, 2000, 3200, 5000 |
-| `rho` | 0, 0.091, 0.13, 0.167, 0.2 |
-| `s` | 1, 4, 5, 6, 7 |
-| `d` | 0, 0.05, 0.1, 0.2, 0.3 |
-| `beta` | 0, 5e-3, 1e-2, 2e-2 |
+**MLP (MNIST):** Two hidden layers of width 50 ($784 \to 50 \to 50 \to 10$), ReLU activations, no bias. The AWD analysis targets the weight matrix between the two hidden layers (flattened parameter dimension $D = 50 \times 50 = 2500$).
 
-## Supported Models
+**MLP (CIFAR-10):** Three hidden layers ($3072 \to 1000 \to 50 \to 50 \to 10$), ReLU activations, no bias. The AWD analysis targets the weight matrix connecting the last two hidden layers ($D = 50 \times 50 = 2500$).
 
-| Model | Architecture | Target Layer |
-|-------|-------------|--------------|
-| FC | Flatten → Linear(784,H) → ReLU → Linear(H,H) → ReLU → Linear(H,10) | [1] |
-| MLP | Linear → ReLU → Dropout → Linear → ReLU → Linear → ReLU → Linear(10) | [1] |
-| CNN | VGG-style Conv [32,'M',64,'M',128,128,'M'] → AdaptiveAvgPool → FC(128,20) → ReLU → FC(20,C) | [8] |
+**CNN (MNIST & CIFAR-10):** VGG-style convolutional layers `[32, M, 64, M, 128, 128, M]` (kernel size 3, padding 1; `M` = MaxPool with kernel 2, stride 2), followed by AdaptiveAvgPool → $128 \to 20 \to \mathcal{C}$ fully connected classifier. ReLU activations, no bias, no BatchNorm. The AWD analysis targets the weight matrix from features to the hidden FC layer ($D = 128 \times 20 = 2560$).
 
-All models use **no bias** and cache intermediate layer features in `self.feature` for Hessian computation.
+All intermediate layer features are cached in `self.feature` for per-sample Hessian computation.
+
+| Model | `layer_index` | Parameter Dimension $D$ |
+|-------|---------------|------------------------|
+| MLP (MNIST) | [1] | 2500 |
+| MLP (CIFAR-10) | [1] | 2500 |
+| CNN | [8] | 2560 |
+
+### Training Hyperparameters (Table 1 in paper)
+
+The following table specifies the exact training setups used to produce the main results. $N_{\text{data}}$ denotes samples per class; $\mathcal{N}$ is the number of top eigenvalues used for $\gamma$ fitting; $\mathcal{C}$ is the number of classes.
+
+| Dataset | Model | Loss | $N_{\text{data}}$ | Batch $B$ | Epochs | $\mathcal{N}$ ($\mathcal{C}$=3) | $\mathcal{N}$ ($\mathcal{C}$=6) | $\mathcal{N}$ ($\mathcal{C}$=10) |
+|---------|-------|------|----------|---------|--------|------|------|------|
+| MNIST | MLP | CE | 2,000 | 50 | 100 | 300 | 1,000 | 1,000 |
+| MNIST | MLP | MSE | 2,000 | 50 | 100 | 300 | 1,000 | 1,000 |
+| MNIST | CNN | CE | 2,000 | 50 | 100 | 200 | 500 | 1,000 |
+| MNIST | CNN | MSE | 5,000 | 128 | 100 | 200 | 300 | 800 |
+| CIFAR-10 | MLP | CE | 2,000 | 100 | 150 | 800 | 1,500 | 1,500 |
+| CIFAR-10 | MLP | MSE | 5,000 | 100 | 100 | 500 | 1,000 | 1,000 |
+| CIFAR-10 | CNN | CE | 2,000* | 128 | 100 | 500 | 1,000 | 1,500 |
+| CIFAR-10 | CNN | MSE | 5,000 | 128 | 500 | 500 | 500 | 1,000 |
+
+\* For CIFAR-10 CNN CE with $\mathcal{C}=3$, $N_{\text{data}}=5{,}000$.
+
+All experiments use SGD with learning rate $\eta = 0.1$. Results in Table 1 are averaged over **4 independent runs** with distinct random seeds.
+
+### Figure-Specific Settings
+
+- **CNN figures:** Trained on a balanced CIFAR-10 subset (2,000 per class, 20,000 total). CE loss, 100 epochs, $B=128$, $\eta=0.1$.
+- **MLP figures:** Trained on a balanced MNIST subset (2,000 per class, 20,000 total). 100 epochs, $B=50$, $\eta=0.1$.
+
+### Configuration Parameters (model_config.py)
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `alpha` | float | 0.1 | SGD learning rate $\eta$ |
+| `lss_fn` | str | `'mse'` | Loss function: `'mse'` (Softmax+MSE) / `'cse'` (CrossEntropy) / `'lmse'` (Linear MSE) |
+| `B` | int | 50 | Mini-batch size |
+| `train_size` | int | 2000 | Training samples per class $N_{\text{data}}$ |
+| `test_size` | int | 1000 | Test set size |
+| `rho` | float | 0 | Label noise probability |
+| `net_size` | int | 50 | Hidden layer width |
+| `s` | int | 1 | Weight initialization scaling factor |
+| `d` | float | 0 | Dropout probability |
+| `beta` | float | 0 | L2 regularization coefficient |
+| `stop_loss` | float | 1e-5 | Early stopping loss threshold |
+| `sample_holder` | list | [0..9] | Class IDs for matched sample pair construction |
+| `class_number` | int | 10 | Total number of classes $\mathcal{C}$ |
+| `layer_index` | list | [1] | Target layer index for AWD analysis |
+| `dataset` | str | — | Dataset: `'mnist'` / `'cifar10'` / `'fdata'` |
+| `model` | str | — | Architecture: `'FC'` / `'MLP'` / `'CNN'` |
 
 ## Supported Datasets
 
@@ -168,7 +191,6 @@ All models use **no bias** and cache intermediate layer features in `self.featur
 |---------|-------------|
 | MNIST | Handwritten digits, 28×28 grayscale |
 | CIFAR-10 | 10-class natural images, 32×32 color (normalized) |
-| fdata | Synthetic dataset |
 
 ## Getting Started
 
@@ -222,10 +244,9 @@ AWCH_data/NS{net_size}_TrainSize{train_size}_SampleN{sample_number}_ClassN{n_cla
 ## Citation
 
 ```bibtex
-@inproceedings{zhang2026superlinear,
+@article{zhang2026superlinear,
   title={On the Superlinear Relationship between SGD Noise Covariance and Loss Landscape Curvature},
   author={Zhang, Yikuan and Yang, Ning and Tu, Yuhai},
-  booktitle={International Conference on Machine Learning (ICML)},
   year={2026}
 }
 ```
