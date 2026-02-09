@@ -1,6 +1,6 @@
 # AW-CH: Approximate Weight Duality — Covariance & Hessian Analysis
 
-A research framework for analyzing neural network generalization through loss landscape curvature (Hessian) and SGD noise covariance, based on **Approximate Weight Duality (AWD)**.
+A research framework for analyzing neural network learning dynamics through loss landscape curvature (Hessian) and SGD noise covariance, based on **Approximate Weight Duality (AWD)**.
 
 ## Core Ideas
 
