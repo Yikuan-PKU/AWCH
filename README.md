@@ -239,12 +239,3 @@ AWCH_data/NS{net_size}_TrainSize{train_size}_SampleN{sample_number}_ClassN{n_cla
 | `C` / `Covar` | Empirical noise covariance | Eq. 2 |
 | `Hessian` | Global Hessian $\mathbf{H}$ and eigen-decomposition | — |
 
-## Citation
-
-```bibtex
-@article{zhang2026superlinear,
-  title={On the Superlinear Relationship between SGD Noise Covariance and Loss Landscape Curvature},
-  author={Zhang, Yikuan and Yang, Ning and Tu, Yuhai},
-  year={2026}
-}
-```
