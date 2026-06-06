@@ -169,7 +169,7 @@ All models are trained with vanilla SGD to convergence: **100% training accuracy
 
 ### Architecture Details
 
-**MLP (MNIST):** Two hidden layers of width 50 ($784 \to 50 \to 50 \to 10$), ReLU activations, no bias. The AWD analysis targets the weight matrix between the two hidden layers.
+**FC (MNIST):** Two hidden layers of width 50 ($784 \to 50 \to 50 \to 10$), ReLU activations, no bias. In code this corresponds to `config['model'] = 'FC'` and `models.FC_feature`. The AWD analysis targets the weight matrix between the two hidden layers.
 
 **MLP (CIFAR-10):** Three hidden layers ($3072 \to 1000 \to 50 \to 50 \to 10$), ReLU activations, no bias. The AWD analysis targets the weight matrix connecting the last two hidden layers.
 
@@ -181,7 +181,7 @@ All intermediate layer features are cached in `self.feature` for per-sample Hess
 
 | Model | Typical `layer_index` / `layer_indices` | Notes |
 |-------|-----------------------------------------|-------|
-| MLP (MNIST) | `[1]` | Single-layer AWD analysis |
+| FC (MNIST) | `[1]` | Single-layer AWD analysis |
 | MLP (CIFAR-10) | `[2]` | Single-layer AWD analysis |
 | CNN | `[8]` | Feature-to-hidden classifier layer |
 | FC_multilayer | `[1]`, `[1,2,3]`, or `[1,2,3,4]` | Single-layer AWD C or joint H1/H2 statistics |
@@ -192,8 +192,8 @@ The following table specifies the training setups used to produce the main resul
 
 | Dataset | Model | Loss | $N_{\text{data}}$ | Batch $B$ | Epochs | $\mathcal{N}$ ($\mathcal{C}$=3) | $\mathcal{N}$ ($\mathcal{C}$=6) | $\mathcal{N}$ ($\mathcal{C}$=10) |
 |---------|-------|------|----------|---------|--------|------|------|------|
-| MNIST | MLP | CE | 2,000 | 50 | 100 | 300 | 1,000 | 1,000 |
-| MNIST | MLP | MSE | 2,000 | 50 | 100 | 300 | 1,000 | 1,000 |
+| MNIST | FC | CE | 2,000 | 50 | 100 | 300 | 1,000 | 1,000 |
+| MNIST | FC | MSE | 2,000 | 50 | 100 | 300 | 1,000 | 1,000 |
 | MNIST | CNN | CE | 2,000 | 50 | 100 | 200 | 500 | 1,000 |
 | MNIST | CNN | MSE | 5,000 | 128 | 100 | 200 | 300 | 800 |
 | CIFAR-10 | MLP | CE | 2,000 | 100 | 150 | 800 | 1,500 | 1,500 |
@@ -208,7 +208,7 @@ All experiments use SGD with learning rate $\eta = 0.1$. Results in Table 1 are 
 ### Figure-Specific Settings
 
 - **CNN figures:** Trained on a balanced CIFAR-10 subset (2,000 per class, 20,000 total). CE loss, 100 epochs, $B=128$, $\eta=0.1$.
-- **MLP figures:** Trained on a balanced MNIST subset (2,000 per class, 20,000 total). 100 epochs, $B=50$, $\eta=0.1$.
+- **FC figures:** Trained on a balanced MNIST subset (2,000 per class, 20,000 total). 100 epochs, $B=50$, $\eta=0.1$.
 
 ### Configuration Parameters (model_config.py)
 
