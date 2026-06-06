@@ -1,20 +1,27 @@
 import torch
+import torch.utils.data as Data
 import numpy as np
+from itertools import cycle
+import copy
+import utils
+import data
+import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader
 from torch.func import hessian, grad, vmap, functional_call
 import time
 import gc
-import torch.nn.functional as F  
-
+import torch.nn.functional as F
 
 
 def get_hidden_output(model, data_x, layer_index):
-    _ = model(data_x) 
-
+    """
+    """
+    _ = model(data_x)
     feature = model.feature[layer_index]
     return feature
 
 def get_target_params_and_buffers_C(model, layer_index):
+    """Implementation note."""
     params = dict(model.named_parameters())
     buffers = dict(model.named_buffers())
     target_key = list(params.keys())[layer_index]
@@ -27,6 +34,8 @@ def get_target_params_and_buffers_C(model, layer_index):
 
 
 def pre_calculate_all_features_custom(model, x, layer_index, batch_size=64):
+    """
+    """
     device = x.device
     temp_features = []
     
@@ -49,7 +58,8 @@ def pre_calculate_all_features_custom(model, x, layer_index, batch_size=64):
 
 def cal_C_cuda(model, train_x, train_y, sample_holder, layer_index, components, 
                batch_size=50, sample_number=10, loss_fn_name='cse', iterations=None):
-
+    """
+    """
     device = train_x.device
     model.zero_grad(set_to_none=True)
     model.eval()
@@ -123,7 +133,7 @@ def cal_C_cuda(model, train_x, train_y, sample_holder, layer_index, components,
         b_x, b_y = b_x.to(device), b_y.to(device)
         
         anchor_indices_list = []
-        anchor_labels_list = []  
+        anchor_labels_list = []
         
         for cls in sample_holder:
             idx_pool = class_indices_map[cls]
@@ -137,7 +147,7 @@ def cal_C_cuda(model, train_x, train_y, sample_holder, layer_index, components,
             anchor_labels_list.append(labels)
             
         anchor_indices = torch.cat(anchor_indices_list)
-        anchor_labels = torch.cat(anchor_labels_list) 
+        anchor_labels = torch.cat(anchor_labels_list) # Shape: (N_anchor,)
         
         anchor_features = all_cached_features[anchor_indices.cpu()].to(device)
 
@@ -149,7 +159,8 @@ def cal_C_cuda(model, train_x, train_y, sample_holder, layer_index, components,
         
         dists = torch.cdist(b_features, anchor_features)
         
-
+        # b_y: [Batch] -> [Batch, 1]
+        # anchor_labels: [N_anchor] -> [1, N_anchor]
         class_diff_mask = b_y.unsqueeze(1) != anchor_labels.unsqueeze(0)
         
         dists.masked_fill_(class_diff_mask, float('inf'))
@@ -287,9 +298,9 @@ def cal_hessian_stats_cuda(model, train_x, train_y, components, layer_index, los
     
     def compute_loss_stateless(target_params_arg, x_arg, y_arg):
         all_params = {**other_params, **target_params_arg}
+        # x_arg: (D,) -> (1, D) for model input
         out = functional_call(model, (all_params, buffers), (x_arg.unsqueeze(0),))
         
-
         if isinstance(loss_fn, str):
             if loss_fn == 'mse':
                 probs = F.softmax(out, dim=-1)
@@ -326,14 +337,13 @@ def cal_hessian_stats_cuda(model, train_x, train_y, components, layer_index, los
             b_y_input = b_y
         raw_H = batch_hessian_fn(target_params, b_x, b_y_input)
         
-        #
         H_proj = torch.einsum('kd, bde, le -> bkl', components, raw_H, components)
 
         del raw_H
 
 
         current_H1 = H_proj.sum(dim=0)
-        H1_sum += current_H1.detach() 
+        H1_sum += current_H1.detach()
         
         del current_H1
         H_sq = torch.bmm(H_proj, H_proj)
@@ -359,22 +369,137 @@ def cal_hessian_stats_cuda(model, train_x, train_y, components, layer_index, los
     return H_1_d, H_2_d
 
 
+def cal_hessian_stats_cuda_multi(model, train_x, train_y, components, layer_index, loss_fn, batch_size=32):
+    """
+    Multi-layer version of H1/H2 statistics.
+    It builds a joint Hessian over the given layer_index list (same indexing style as utils.cal_hessian_cuda),
+    then projects to `components` and computes E[H] and E[H^2] in the projected space.
+    """
+    device = train_x.device
+    model.eval()
+
+    if isinstance(layer_index, int):
+        layer_index = [layer_index]
+    if len(layer_index) == 0:
+        raise ValueError("layer_index should contain at least one index.")
+
+    dataset = TensorDataset(train_x, train_y)
+    loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+
+    params = dict(model.named_parameters())
+    buffers = dict(model.named_buffers())
+    param_keys = list(params.keys())
+
+    target_keys = []
+    for idx in layer_index:
+        if idx < 0 or idx >= len(param_keys):
+            raise ValueError(f"Layer index {idx} out of range [0, {len(param_keys)-1}].")
+        target_keys.append(param_keys[idx])
+
+    target_params = {k: params[k] for k in target_keys}
+    other_params = {k: v for k, v in params.items() if k not in target_params}
+    param_numels = {k: target_params[k].numel() for k in target_keys}
+    total_dim = sum(param_numels[k] for k in target_keys)
+
+    components = torch.tensor(components, dtype=torch.float32, device=device)
+    if components.shape[1] != total_dim:
+        raise ValueError(
+            f"components shape mismatch: got {components.shape}, expected second dim = {total_dim}."
+        )
+
+    K = components.shape[0]
+    H1_sum = torch.zeros((K, K), device=device)
+    H2_sum = torch.zeros((K, K), device=device)
+    total_samples = 0
+
+    with torch.no_grad():
+        dummy_out = model(train_x[0:1].to(device))
+        num_classes = dummy_out.shape[-1]
+
+    def compute_loss_stateless(target_params_arg, x_arg, y_arg):
+        all_params = {**other_params, **target_params_arg}
+        out = functional_call(model, (all_params, buffers), (x_arg.unsqueeze(0),))
+
+        if isinstance(loss_fn, str):
+            if loss_fn == 'mse':
+                probs = F.softmax(out, dim=-1)
+                loss = F.mse_loss(probs, y_arg.unsqueeze(0))
+            elif loss_fn == 'lmse':
+                loss = F.mse_loss(out, y_arg.unsqueeze(0))
+            elif loss_fn == 'cse':
+                loss = F.cross_entropy(out, y_arg.unsqueeze(0))
+            else:
+                raise ValueError(f"Unsupported loss_fn string: {loss_fn}")
+        else:
+            loss = loss_fn(out, y_arg.unsqueeze(0))
+        return loss
+
+    def get_single_hessian_flat(target_params_arg, x_arg, y_arg):
+        h_dict = hessian(compute_loss_stateless)(target_params_arg, x_arg, y_arg)
+
+        row_blocks = []
+        for key_i in target_keys:
+            col_blocks = []
+            for key_j in target_keys:
+                h_block = h_dict[key_i][key_j].reshape(param_numels[key_i], param_numels[key_j])
+                col_blocks.append(h_block)
+            row_blocks.append(torch.cat(col_blocks, dim=1))
+        return torch.cat(row_blocks, dim=0)
+
+    batch_hessian_fn = vmap(get_single_hessian_flat, in_dims=(None, 0, 0))
+
+    print(f"--- Processing {len(dataset)} samples for layers {layer_index} ---")
+    start_time = time.time()
+
+    for batch_idx, (b_x, b_y) in enumerate(loader):
+        b_x, b_y = b_x.to(device), b_y.to(device)
+        current_bs = b_x.shape[0]
+
+        if isinstance(loss_fn, str) and "mse" in loss_fn.lower():
+            b_y_input = F.one_hot(b_y, num_classes=num_classes).float()
+        else:
+            b_y_input = b_y
+
+        raw_H = batch_hessian_fn(target_params, b_x, b_y_input)
+        H_proj = torch.einsum('kd, bde, le -> bkl', components, raw_H, components)
+
+        H1_sum += H_proj.sum(dim=0).detach()
+        H_sq = torch.bmm(H_proj, H_proj)
+        H2_sum += H_sq.sum(dim=0).detach()
+
+        del raw_H, H_proj, H_sq
+        total_samples += current_bs
+
+        if (batch_idx + 1) % 10 == 0:
+            print(f"Batch {batch_idx+1}/{len(loader)} | Time: {time.time() - start_time:.1f}s")
+
+        torch.cuda.empty_cache()
+        gc.collect()
+
+    H_1_d = (H1_sum / total_samples).detach().cpu().numpy()
+    H_2_d = (H2_sum / total_samples).detach().cpu().numpy()
+
+    return H_1_d, H_2_d
+
+
 
 ########################################################
 
 
 
 def cal_h_g_cuda(model, train_x, train_y, sample_holder, layer_index, components, sample_number, loss_fn_name, batch_size=8):
-
+    """
+    """
     device = train_x.device
     model.eval()
-
+    
+    # -----------------------------------------------------------
+    # -----------------------------------------------------------
     print("Filtering data...")
     selected_x = []
     selected_y = []
     
     for class_id in sample_holder:
-
         indices = torch.nonzero(train_y == class_id, as_tuple=True)[0]
         if len(indices) < sample_number:
             print(f"Warning: Class {class_id} has only {len(indices)} samples, requested {sample_number}.")
@@ -394,7 +519,8 @@ def cal_h_g_cuda(model, train_x, train_y, sample_holder, layer_index, components
     N_total = target_x.shape[0]
     print(f"Total samples to process: {N_total}")
 
-
+    # -----------------------------------------------------------
+    # -----------------------------------------------------------
     dataset = TensorDataset(target_x, target_y)
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
     
@@ -434,7 +560,8 @@ def cal_h_g_cuda(model, train_x, train_y, sample_holder, layer_index, components
     batch_grad_fn = vmap(get_single_grad_flat, in_dims=(None, 0, 0))
     batch_hessian_fn = vmap(get_single_hessian_flat, in_dims=(None, 0, 0))
 
-
+    # -----------------------------------------------------------
+    # -----------------------------------------------------------
     h_holder_list = []
     g_holder_list = []
     
@@ -457,18 +584,18 @@ def cal_h_g_cuda(model, train_x, train_y, sample_holder, layer_index, components
         # raw_h shape: (Batch, D_flat, D_flat)
         raw_h = batch_hessian_fn(target_params, b_x, b_y_input)
         
-
         g_holder_list.append(raw_g.detach().cpu().numpy())
         h_holder_list.append(raw_h.detach().cpu().numpy())
         
         del raw_g, raw_h, b_y_input
         torch.cuda.empty_cache()
-        gc.collect() 
+        gc.collect()
         
         if (batch_idx + 1) % 5 == 0:
             print(f"Batch {batch_idx+1}/{len(loader)} | Time: {time.time() - start_time:.1f}s")
 
-
+    # -----------------------------------------------------------
+    # -----------------------------------------------------------
     print("Concatenating results...")
     g_final = np.concatenate(g_holder_list, axis=0)
     

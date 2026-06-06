@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+from math import e
+import matplotlib.pyplot as plt
+from sympy import hessian
 import torch
 import numpy as np
 import torch.utils.data as Data
 import torch.nn as nn
+
 import models
 import data
 import utils
@@ -17,6 +21,12 @@ def set_model(config):
             model = models.FC_feature(28*28,net_size,net_size,d)
         elif config['dataset'] == 'cifar10':
             model = models.FC_feature(3*32*32,net_size,net_size,d)
+    elif config['model'] == 'FC_multilayer':
+        hidden_sizes = config.get('hidden_sizes', [net_size, net_size, net_size])
+        if config['dataset'] == 'mnist':
+            model = models.FC_feature_multilayer(28*28, hidden_sizes, d)
+        elif config['dataset'] == 'cifar10':
+            model = models.FC_feature_multilayer(3*32*32, hidden_sizes, d)
     elif config['model'] == 'MLP':
         if config['dataset'] == 'mnist':
             model = models.MLP_feature(28*28,net_size,50,50,d)
@@ -82,12 +92,21 @@ def train(config):
         loss_func = nn.CrossEntropyLoss()
     
     torch_dataset = Data.TensorDataset(train_x , train_y)
-    train_loader = Data.DataLoader(torch_dataset, batch_size=batch_size, shuffle=True, num_workers=0)
+    # all_labels = [label for _, label in torch_dataset]
+    # balanced_sampler = data.BalancedBatchSampler(torch_dataset,all_labels,n_classes_per_batch = config['class_number'],n_samples_per_class = batch_size//config['class_number'])
+    # train_loader = Data.DataLoader(torch_dataset, batch_sampler=balanced_sampler,num_workers=0)
 
+    train_loader = Data.DataLoader(torch_dataset, batch_size=batch_size, shuffle=True, num_workers=0)
+    grad_history = {}
+    hessian_history = {}
     train_loss_holder = []
     test_loss_holder = []
     correct_train_accuracy_holder = []
-    test_accuracy_holder =[] 
+    test_accuracy_holder =[]
+
+
+    layer_grad_norm_holder = []      
+    hessian_geomean_holder = []     
 
     for epoch in range(EPOCH):
         model.train()
@@ -115,6 +134,18 @@ def train(config):
                     loss = loss_func(out_put,y)
             optimizer.zero_grad()
             loss.backward()
+            # # monitering gradient norm
+            # if step == 0:
+            #     # matrix,v,components = utils.cal_hessian_minibatch_gpu(model,
+            #     #                       data_x = correct_train_x,
+            #     #                       data_y = correct_train_y,
+            #     #                       layer_index = config['layer_index'], loss_fn=config['lss_fn'])
+            #     # hessian_history['eigenvalue'] = v
+            #     grad_per_layer = get_grad_per_layer(model)
+            #     for name, g in grad_per_layer.items():
+            #         if name not in grad_history:
+            #             grad_history[name] = []
+            #         grad_history[name].append(g)
 
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
             optimizer.step()
@@ -141,6 +172,18 @@ def train(config):
             
         if (np.mean(correct_train_accuracy_holder[-1:-10:-1])>0.9999)&(all_loss < stop_loss):
             break
+
+    # plt.figure(figsize=(10,6))
+    # for name, g_list in grad_history.items():
+    #     if 'fc' in name or 'classifier' in name:
+    #         plt.plot(g_list, label=name)
+
+    # plt.xlabel("Training steps")
+    # plt.ylabel("Gradient L2 Norm")
+    # plt.title("Per-layer Gradient Norm During Training")
+    # plt.legend()
+    # plt.tight_layout()
+
 
 
     return model, correct_train_x, correct_train_y, test_x, test_y, train_loss_holder, test_loss_holder, correct_train_accuracy_holder, test_accuracy_holder

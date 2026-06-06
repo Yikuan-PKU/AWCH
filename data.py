@@ -1,3 +1,11 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Thu Apr 14 23:04:40 2022
+
+@author: yu
+"""
+
 import numpy as np
 import torchvision
 import torch
@@ -46,6 +54,58 @@ class BalancedBatchSampler(Sampler):
 
     def __len__(self):
         return len(self.labels) // self.batch_size
+
+
+# class BalancedBatchSampler(Sampler):
+#     def __init__(self, dataset, labels, n_classes_per_batch, n_samples_per_class, seed=42):
+#         """
+#         labels: torch Tensor, shape [N]
+#         """
+       
+#         if not torch.is_tensor(labels):
+#             labels = torch.tensor(labels)
+#         assert torch.is_tensor(labels), "labels must be a torch.Tensor"
+#         self.n_classes = len(self.classes)
+
+#         self.class_indices = {
+#             int(c.item()): torch.where(self.labels == c)[0]
+#             for c in self.classes
+#         }
+
+#         self.n_classes_per_batch = n_classes_per_batch
+#         self.n_samples_per_class = n_samples_per_class
+#         self.batch_size = n_classes_per_batch * n_samples_per_class
+
+#         self.n_batches = len(self.labels) // self.batch_size
+
+#         self.gen = torch.Generator()
+#         self.gen.manual_seed(seed)
+
+#     def __iter__(self):
+#         for _ in range(self.n_batches):
+
+#             selected_classes = self.classes[torch.randperm(self.n_classes, generator=self.gen)[:self.n_classes_per_batch]]
+
+#             batch = []
+
+#             for c in selected_classes:
+#                 idx_for_class = self.class_indices[int(c.item())]
+#                 num_idx = len(idx_for_class)
+
+#                 if num_idx >= self.n_samples_per_class:
+#                     selected = idx_for_class[torch.randperm(num_idx, generator=self.gen)[:self.n_samples_per_class]]
+#                 else:
+#                     selected = idx_for_class[torch.randint(0, num_idx, (self.n_samples_per_class,), generator=self.gen)]
+
+#                 batch.extend(selected.tolist())
+
+#             yield batch
+
+#     def __len__(self):
+#         return self.n_batches
+
+
+
 
 
 
@@ -117,9 +177,9 @@ def sub_set_cifar10_task(label_list, sample_number):
     transform_train = transforms.Compose([
         # transforms.RandomCrop(32, padding=4),
         # transforms.RandomHorizontalFlip(),
-        transforms.ToTensor(),     
+        transforms.ToTensor(),
         transforms.Normalize((0.4914, 0.4822, 0.4465),
-                             (0.2023, 0.1994, 0.2010)),   
+                             (0.2023, 0.1994, 0.2010)),
     ])
 
     transform_test = transforms.Compose([
@@ -145,7 +205,7 @@ def sub_set_cifar10_task(label_list, sample_number):
     all_train_x = []
     all_train_y = []
     for i in range(len(train_data)):
-        x, y = train_data[i]   
+        x, y = train_data[i]
         all_train_x.append(x)
         all_train_y.append(y)
     all_train_x = torch.stack(all_train_x)
@@ -160,6 +220,7 @@ def sub_set_cifar10_task(label_list, sample_number):
     all_test_x = torch.stack(all_test_x)
     all_test_y = torch.tensor(all_test_y)
 
+    # g = torch.Generator().manual_seed(42)
     perm = torch.randperm(len(all_train_x))
     all_train_x = all_train_x[perm]
     all_train_y = all_train_y[perm]

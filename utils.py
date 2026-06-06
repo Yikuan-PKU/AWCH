@@ -1,3 +1,11 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Thu Apr 14 23:22:15 2022
+
+@author: yu
+"""
+
 import torch
 import numpy as np
 import torch.nn as nn
@@ -5,6 +13,7 @@ import copy
 import torch.utils.data as Data
 import train_model
 import gc
+
 import torch.nn.functional as F
 from torch.func import functional_call, hessian
 from torch.utils.data import DataLoader, TensorDataset
@@ -78,6 +87,8 @@ def scale_weight_list(weight_list,scale_ratio):
 
 
 def predict_accuracy(model, data_x, data_y, batch_size=30):
+    """
+    """
     device = next(model.parameters()).device
     model.eval()
 
@@ -98,19 +109,33 @@ def predict_accuracy(model, data_x, data_y, batch_size=30):
     accuracy = correct / total
     return accuracy
 
+# def cal_loss(model,data_x,data_y, loss_fn):
 
+
+#     out_put = model(data_x)
+#     if loss_fn == 'mse':
+#         loss_func = nn.MSELoss()
+#         y = nn.functional.one_hot(data_y,num_classes=out_put.shape[-1]).float()
+#         loss = loss_func(out_put,y)
+#     elif loss_fn == 'cse':
+#         loss_func = nn.CrossEntropyLoss()
+#         loss = loss_func(out_put,data_y)
+    
+    
+#     return loss.detach().cpu().numpy()
 
 
 
 def cal_loss(model, data_x, data_y, loss_fn, batch_size=30):
-
-    device = next(model.parameters()).device  
+    """
+    """
+    device = next(model.parameters()).device
     model.eval()
 
     total_loss = 0.0
     total_samples = 0
 
-    with torch.no_grad(): 
+    with torch.no_grad():
         for i in range(0, len(data_x), batch_size):
             batch_x = data_x[i:i+batch_size].to(device)
             batch_y = data_y[i:i+batch_size].to(device)
@@ -281,12 +306,15 @@ def cal_commutation(x,y):
 
 
 def cal_grad_minibatch(model, data_x, data_y, layer_index, loss_fn, batch_size=128):
+    """
+    
+    model: torch.nn.Module
+    """
     device = next(model.parameters()).device
     model = copy.deepcopy(model).to(device)
     
-
     params = [list(model.parameters())[l] for l in layer_index]
-    P = sum(p.numel() for p in params)  
+    P = sum(p.numel() for p in params)
     
     grad_sum = torch.zeros(P, device=device)
     
@@ -312,13 +340,12 @@ def cal_grad_minibatch(model, data_x, data_y, layer_index, loss_fn, batch_size=1
         elif loss_fn == 'cse':
             loss = nn.CrossEntropyLoss()(out, batch_y)
         
-
         grads_list = torch.autograd.grad(loss, params)
-
+        
         grads_flat = torch.cat([g.reshape(-1) for g in grads_list])
-
+        
         grad_sum += grads_flat * (len(batch_x) / N)
-
+        
         del batch_x, batch_y, out, loss, grads_list, grads_flat
         torch.cuda.empty_cache()
     
@@ -407,96 +434,106 @@ def cal_hessian(model,data_x,data_y, layer_index, loss_fn):
 
 
 def get_target_params_and_buffers(model, layer_index):
-
+    """Implementation note."""
     params = dict(model.named_parameters())
     buffers = dict(model.named_buffers())
 
-    target_key = list(params.keys())[layer_index[0]]
-    
-    target_params = {target_key: params[target_key]}
-    other_params = {k: v for k, v in params.items() if k != target_key}
-    
-    return target_params, other_params, buffers, target_key
+    if isinstance(layer_index, int):
+        layer_index = [layer_index]
+    if len(layer_index) == 0:
+        raise ValueError("layer_index should contain at least one index.")
+
+    param_keys = list(params.keys())
+    target_keys = []
+    for idx in layer_index:
+        if idx < 0 or idx >= len(param_keys):
+            raise ValueError(f"Layer index {idx} out of range [0, {len(param_keys)-1}].")
+        target_keys.append(param_keys[idx])
+
+    target_params = {k: params[k] for k in target_keys}
+    other_params = {k: v for k, v in params.items() if k not in target_params}
+
+    return target_params, other_params, buffers, target_keys
 
 def cal_hessian_cuda(model, data_x, data_y, layer_index, loss_fn, batch_size=64):
-
+    """
+    """
     model = copy.deepcopy(model)
     device = next(model.parameters()).device
     
-
     N = len(data_x)
     dataset = TensorDataset(data_x, data_y)
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
-
-    target_params, other_params, buffers, target_key = get_target_params_and_buffers(model, layer_index)
-
-    P = target_params[target_key].numel()
-    D_shape = target_params[target_key].shape
-    print(f"Calculating Hessian for Layer {layer_index[0]} | Params: {P} | Shape: {D_shape}")
     
-
+    target_params, other_params, buffers, target_keys = get_target_params_and_buffers(model, layer_index)
+    param_numels = {k: target_params[k].numel() for k in target_keys}
+    
+    P = sum(param_numels[k] for k in target_keys)
+    print(f"Calculating joint Hessian for layers {layer_index} | Total params: {P}")
+    for k in target_keys:
+        print(f"  - {k}: shape={tuple(target_params[k].shape)}, numel={param_numels[k]}")
+    
     hessian_sum = torch.zeros((P, P), device=device)
-
+    
     with torch.no_grad():
         dummy_out = model(data_x[0:1].to(device))
         num_classes = dummy_out.shape[-1]
-
 
     def compute_loss_stateless(t_params, x, y):
         all_params = {**other_params, **t_params}
         out = functional_call(model, (all_params, buffers), (x,))
         
         if loss_fn == "mse":
-
+            # MSE: Softmax -> OneHot -> MSE
             probs = F.softmax(out, dim=-1)
-
             loss = F.mse_loss(probs, y)
         elif loss_fn == "lmse":
-
+            # LMSE: OneHot -> MSE
             loss = F.mse_loss(out, y)
         elif loss_fn == "cse":
-
+            # CrossEntropy
             loss = F.cross_entropy(out, y)
         return loss
 
-
     def get_hessian_matrix(t_params, x, y):
         h_dict = hessian(compute_loss_stateless)(t_params, x, y)
-        h_raw = h_dict[target_key][target_key]
-        return h_raw.view(P, P)
+
+        row_blocks = []
+        for key_i in target_keys:
+            col_blocks = []
+            for key_j in target_keys:
+                h_block = h_dict[key_i][key_j].reshape(param_numels[key_i], param_numels[key_j])
+                col_blocks.append(h_block)
+            row_blocks.append(torch.cat(col_blocks, dim=1))
+        return torch.cat(row_blocks, dim=0)
 
     print(f"Total samples: {N}. Batch size: {batch_size}.")
     
-
     for b_idx, (b_x, b_y) in enumerate(loader):
         print(f"Processing batch {b_idx+1}/{len(loader)}...")
         b_x = b_x.to(device)
         b_y = b_y.to(device)
 
-
         if  "mse" in loss_fn.lower():
             y_in = F.one_hot(b_y, num_classes=num_classes).float()
         else:
-            y_in = b_y 
+            y_in = b_y
 
         H_batch = get_hessian_matrix(target_params, b_x, y_in)
         
+        # H_batch = (1/B) * Sum(H_i).
         weight = len(b_x) / N
-        hessian_sum += weight * H_batch.detach() 
-
+        hessian_sum += weight * H_batch.detach()
 
         del H_batch
         torch.cuda.empty_cache()
 
-
     print("Computing Eigenvalues...")
     H_cpu = hessian_sum.cpu().numpy()
     
-
     del hessian_sum
     gc.collect()
     torch.cuda.empty_cache()
-
 
     eigenvalue, eigenvector = np.linalg.eigh(H_cpu)
 
@@ -513,8 +550,8 @@ def cal_hessian_minibatch_gpu(
     layer = layer_index[0]
     param = list(model.parameters())[layer]
 
-    P = param.numel() 
-    hessian_sum = torch.zeros((P, P), device=device)  
+    P = param.numel()
+    hessian_sum = torch.zeros((P, P), device=device)
 
     N = len(data_x)
     num_batches = (N + batch_size - 1) // batch_size
@@ -543,26 +580,21 @@ def cal_hessian_minibatch_gpu(
         grad1 = torch.autograd.grad(loss, param, create_graph=True)[0]
         grad1_flat = grad1.reshape(-1)
 
-
         rows = []
         for gi in grad1_flat:
-
             grad2 = torch.autograd.grad(gi, param, retain_graph=True)[0]
             rows.append(grad2.reshape(-1))
 
         H_B = torch.stack(rows)  # shape = (P, P)
 
-
         weight = (len(batch_x) / N)
-        hessian_sum += weight * H_B  
+        hessian_sum += weight * H_B
 
         del loss, out, grad1, grad2, H_B, rows
         torch.cuda.empty_cache()
 
-
     H_cpu = hessian_sum.detach().cpu().numpy()
     eigenvalue,eigenvector = np.linalg.eigh(H_cpu)
-
 
     del model
     gc.collect()
